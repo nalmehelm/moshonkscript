@@ -71,9 +71,9 @@ local walkSpeed = 16
 local jumpPower = 50
 local isFlingEnabled = false
 local flingConnection = nil
-local flingStrength = 5000 -- Новая переменная для силы Fling
 local isNoClipEnabled = false
 local noClipConnection = nil
+local flingDiedConnection = nil
 
 -- Функция для очистки консоли
 local function clearConsole()
@@ -712,60 +712,59 @@ end
 local function flingLocalPlayer()
     local success, err = pcall(function()
         local character = LocalPlayer.Character
-        if character then
-            local humanoid = character:FindFirstChildOfClass("Humanoid")
-            local rootPart = character:FindFirstChild("HumanoidRootPart")
-            if humanoid and rootPart and humanoid.Health > 0 then
-                -- Очистка предыдущих Fling-инстансов
-                if rootPart:FindFirstChild("FlingVelocity") then
-                    rootPart:FindFirstChild("FlingVelocity"):Destroy()
-                end
+        if not character then return end
+        local humanoid = character:FindFirstChildOfClass("Humanoid")
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if not humanoid or not rootPart or humanoid.Health <= 0 then return end
 
-                -- Используем CFrame для мгновенного смещения вверх (аналогично Infinite Yield)
-                local currentCFrame = rootPart.CFrame
-                rootPart.CFrame = currentCFrame + Vector3.new(0, flingStrength / 10, 0)
-
-                -- Добавляем небольшую BodyVelocity для импульса
-                local bodyVelocity = Instance.new("BodyVelocity")
-                bodyVelocity.Name = "FlingVelocity"
-                bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
-                bodyVelocity.Velocity = Vector3.new(0, flingStrength, 0)
-                bodyVelocity.Parent = rootPart
-
-                -- Удаляем BodyVelocity через 0.1 секунды
-                task.spawn(function()
-                    task.wait(0.1)
-                    if bodyVelocity and bodyVelocity.Parent then
-                        bodyVelocity:Destroy()
-                    end
-                end)
+        -- Применяем физические свойства и отключаем коллизии
+        for _, child in ipairs(character:GetDescendants()) do
+            if child:IsA("BasePart") then
+                child.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
+                child.CanCollide = false
+                child.Massless = true
+                child.Velocity = Vector3.new(0, 0, 0)
             end
         end
+
+        -- Создаем BodyAngularVelocity
+        local bambam = Instance.new("BodyAngularVelocity")
+        bambam.Name = "FlingAngularVelocity"
+        bambam.Parent = rootPart
+        bambam.AngularVelocity = Vector3.new(0, 99999, 0)
+        bambam.MaxTorque = Vector3.new(0, math.huge, 0)
+        bambam.P = math.huge
+
+        -- Включаем NoClip, если еще не включен
+        if not isNoClipEnabled then
+            enableNoClip()
+        end
+
+        -- Запускаем пульсирующий эффект
+        local flingTimer = 0
+        local flingPhase = true
+        flingConnection = RunService.Heartbeat:Connect(function(deltaTime)
+            if not isFlingEnabled or not rootPart or not rootPart.Parent or not humanoid or humanoid.Health <= 0 then
+                if bambam and bambam.Parent then bambam:Destroy() end
+                if flingConnection then flingConnection:Disconnect() flingConnection = nil end
+                if not isNoClipEnabled then disableNoClip() end
+                return
+            end
+
+            flingTimer = flingTimer + deltaTime
+            if flingPhase and flingTimer >= 0.2 then
+                bambam.AngularVelocity = Vector3.new(0, 0, 0)
+                flingPhase = false
+                flingTimer = 0
+            elseif not flingPhase and flingTimer >= 0.1 then
+                bambam.AngularVelocity = Vector3.new(0, 99999, 0)
+                flingPhase = true
+                flingTimer = 0
+            end
+        end)
     end)
     if not success then
         warn("Ошибка при выполнении Fling: " .. tostring(err))
-    end
-end
-
--- Запуск Fling каждые 0.05 секунд (увеличено для снижения нагрузки)
-local function startFlingUpdate()
-    if not flingConnection then
-        flingConnection = RunService.Heartbeat:Connect(function(deltaTime)
-            staticFlingUpdateTime = (staticFlingUpdateTime or 0) + deltaTime
-            if staticFlingUpdateTime >= 0.05 then
-                if isFlingEnabled then
-                    flingLocalPlayer()
-                end
-                staticFlingUpdateTime = 0
-            end
-        end)
-    end
-end
-
-local function stopFlingUpdate()
-    if flingConnection then
-        flingConnection:Disconnect()
-        flingConnection = nil
     end
 end
 
@@ -774,7 +773,17 @@ local function enableFling()
     local success, err = pcall(function()
         print("Enabling Fling...")
         isFlingEnabled = true
-        startFlingUpdate()
+        flingLocalPlayer()
+        -- Подключаем обработчик смерти
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                flingDiedConnection = humanoid.Died:Connect(function()
+                    disableFling()
+                end)
+            end
+        end
     end)
     if not success then
         warn("Ошибка при включении Fling: " .. tostring(err))
@@ -786,13 +795,34 @@ local function disableFling()
     local success, err = pcall(function()
         print("Disabling Fling...")
         isFlingEnabled = false
-        stopFlingUpdate()
+        if flingConnection then
+            flingConnection:Disconnect()
+            flingConnection = nil
+        end
+        if flingDiedConnection then
+            flingDiedConnection:Disconnect()
+            flingDiedConnection = nil
+        end
         local character = LocalPlayer.Character
         if character and character:FindFirstChild("HumanoidRootPart") then
             local rootPart = character:FindFirstChild("HumanoidRootPart")
-            if rootPart:FindFirstChild("FlingVelocity") then
-                rootPart:FindFirstChild("FlingVelocity"):Destroy()
+            if rootPart:FindFirstChild("FlingAngularVelocity") then
+                rootPart:FindFirstChild("FlingAngularVelocity"):Destroy()
             end
+            -- Восстанавливаем физические свойства и коллизии
+            for _, child in ipairs(character:GetDescendants()) do
+                if child:IsA("BasePart") then
+                    child.CustomPhysicalProperties = nil
+                    child.Massless = false
+                    if not isNoClipEnabled then
+                        child.CanCollide = true
+                    end
+                end
+            end
+        end
+        -- Отключаем NoClip, если он не включен отдельно
+        if not isNoClipEnabled then
+            disableNoClip()
         end
     end)
     if not success then
@@ -1057,7 +1087,7 @@ local ColorPickerNameHP = VisualTab:CreateColorPicker({
 
 local Label4 = MovementTab:CreateLabel({
     Text = "Speed/Power Modifications",
-    Style = 1 -- Luna Labels Have 3 Styles : A Basic Label, A Green Information Label and A Red Warning Label. Look At The Following Image For More Details
+    Style = 1
 })
 
 -- Input для FlySpeed
@@ -1088,35 +1118,6 @@ local FlySpeedInput = MovementTab:CreateInput({
         end
     end
 }, "FlySpeedInput")
-
--- Input для Fling Strength
-local FlingStrengthInput = MovementTab:CreateInput({
-    Name = "Fling Strength",
-    Description = nil,
-    PlaceholderText = "Enter Fling Strength",
-    CurrentValue = tostring(flingStrength),
-    Numeric = true,
-    MaxCharacters = 5,
-    Enter = true,
-    Callback = function(value)
-        local success, err = pcall(function()
-            local newStrength = tonumber(value)
-            if newStrength and newStrength >= 1000 and newStrength <= 10000 then
-                flingStrength = newStrength
-                print("Fling Strength set to: " .. tostring(flingStrength))
-                if isFlingEnabled then
-                    disableFling()
-                    enableFling()
-                end
-            else
-                warn("Invalid Fling Strength input: " .. tostring(value))
-            end
-        end)
-        if not success then
-            warn("Callback error (Fling Strength): " .. tostring(err))
-        end
-    end
-}, "FlingStrengthInput")
 
 -- Input для WalkSpeed
 local WalkSpeedInput = MovementTab:CreateInput({
@@ -1176,7 +1177,7 @@ local JumpPowerInput = MovementTab:CreateInput({
 
 local Label5 = MovementTab:CreateLabel({
     Text = "Speed/Power Functions",
-    Style = 1 -- Luna Labels Have 3 Styles : A Basic Label, A Green Information Label and A Red Warning Label. Look At The Following Image For More Details
+    Style = 1
 })
 
 -- Переключатель для Fly
