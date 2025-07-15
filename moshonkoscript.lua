@@ -64,13 +64,13 @@ local isConsoleClearEnabled = false
 local consoleClearConnection = nil
 
 -- Переменные для Movement
-local isAutoSprintEnabled = false
-local autoSprintConnection = nil
 local isFlyEnabled = false
 local flyConnection = nil
 local flySpeed = 50
 local walkSpeed = 16
 local jumpPower = 50
+local isFlingEnabled = false
+local flingConnection = nil
 
 -- Функция для очистки консоли
 local function clearConsole()
@@ -620,47 +620,6 @@ local function restoreTextures()
     end
 end
 
--- Функция для AutoSprint
-local function enableAutoSprint()
-    local success, err = pcall(function()
-        print("Enabling AutoSprint...")
-        if not autoSprintConnection then
-            autoSprintConnection = RunService.RenderStepped:Connect(function()
-                if isAutoSprintEnabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid") then
-                    local humanoid = LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-                    if humanoid.MoveDirection.Magnitude > 0 then
-                        game:GetService("ContextActionService"):BindAction(
-                            "AutoSprint",
-                            function() return Enum.ContextActionResult.Sink end,
-                            false,
-                            Enum.KeyCode.LeftShift
-                        )
-                    else
-                        game:GetService("ContextActionService"):UnbindAction("AutoSprint")
-                    end
-                end
-            end)
-        end
-    end)
-    if not success then
-        warn("Ошибка при включении AutoSprint: " .. tostring(err))
-    end
-end
-
-local function disableAutoSprint()
-    local success, err = pcall(function()
-        print("Disabling AutoSprint...")
-        if autoSprintConnection then
-            autoSprintConnection:Disconnect()
-            autoSprintConnection = nil
-            game:GetService("ContextActionService"):UnbindAction("AutoSprint")
-        end
-    end)
-    if not success then
-        warn("Ошибка при выключении AutoSprint: " .. tostring(err))
-    end
-end
-
 -- Функция для Fly
 local function enableFly()
     local success, err = pcall(function()
@@ -743,6 +702,96 @@ local function disableFly()
     end)
     if not success then
         warn("Ошибка при выключении Fly: " .. tostring(err))
+    end
+end
+
+-- Функция для Fling
+local function flingPlayers()
+    local success, err = pcall(function()
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local character = player.Character
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                local rootPart = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart
+
+                if humanoid and rootPart and humanoid.Health > 0 then
+                    local existingVelocity = rootPart:FindFirstChild("FlingVelocity")
+                    if not existingVelocity then
+                        local bodyVelocity = Instance.new("BodyVelocity")
+                        bodyVelocity.Name = "FlingVelocity"
+                        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                        bodyVelocity.Velocity = Vector3.new(0, 5000, 0) -- Высокая скорость вверх
+                        bodyVelocity.Parent = rootPart
+
+                        -- Удаляем BodyVelocity через 0.1 секунды, чтобы избежать постоянного воздействия
+                        task.spawn(function()
+                            task.wait(0.1)
+                            if bodyVelocity and bodyVelocity.Parent then
+                                bodyVelocity:Destroy()
+                            end
+                        end)
+                    end
+                end
+            end
+        end
+    end)
+    if not success then
+        warn("Ошибка при выполнении Fling: " .. tostring(err))
+    end
+end
+
+-- Запуск Fling каждые 0.01 секунд
+local function startFlingUpdate()
+    if not flingConnection then
+        flingConnection = RunService.Heartbeat:Connect(function(deltaTime)
+            staticFlingUpdateTime = (staticFlingUpdateTime or 0) + deltaTime
+            if staticFlingUpdateTime >= 0.01 then
+                if isFlingEnabled then
+                    flingPlayers()
+                end
+                staticFlingUpdateTime = 0
+            end
+        end)
+    end
+end
+
+local function stopFlingUpdate()
+    if flingConnection then
+        flingConnection:Disconnect()
+        flingConnection = nil
+    end
+end
+
+-- Функция для включения Fling
+local function enableFling()
+    local success, err = pcall(function()
+        print("Enabling Fling...")
+        isFlingEnabled = true
+        startFlingUpdate()
+    end)
+    if not success then
+        warn("Ошибка при включении Fling: " .. tostring(err))
+    end
+end
+
+-- Функция для выключения Fling
+local function disableFling()
+    local success, err = pcall(function()
+        print("Disabling Fling...")
+        isFlingEnabled = false
+        stopFlingUpdate()
+        -- Очистка любых оставшихся BodyVelocity
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+                if rootPart and rootPart:FindFirstChild("FlingVelocity") then
+                    rootPart:FindFirstChild("FlingVelocity"):Destroy()
+                end
+            end
+        end
+    end)
+    if not success then
+        warn("Ошибка при выключении Fling: " .. tostring(err))
     end
 end
 
@@ -935,26 +984,34 @@ local ColorPickerNameHP = VisualTab:CreateColorPicker({
     end
 }, "NameHPColorPicker")
 
--- Переключатель для AutoSprint
-local AutoSprintToggle = MovementTab:CreateToggle({
-    Name = "AutoSprint",
+-- Input для FlySpeed
+local FlySpeedInput = MovementTab:CreateInput({
+    Name = "Fly Speed",
     Description = nil,
-    CurrentValue = false,
-    Callback = function(Value)
+    PlaceholderText = "Enter Fly Speed",
+    CurrentValue = tostring(flySpeed),
+    Numeric = true,
+    MaxCharacters = 3,
+    Enter = true,
+    Callback = function(value)
         local success, err = pcall(function()
-            isAutoSprintEnabled = Value
-            print("AutoSprint toggle set to: " .. tostring(Value))
-            if isAutoSprintEnabled then
-                enableAutoSprint()
+            local newSpeed = tonumber(value)
+            if newSpeed and newSpeed >= 0 and newSpeed <= 500 then
+                flySpeed = newSpeed
+                print("Fly Speed set to: " .. tostring(flySpeed))
+                if isFlyEnabled then
+                    disableFly()
+                    enableFly()
+                end
             else
-                disableAutoSprint()
+                warn("Invalid Fly Speed input: " .. tostring(value))
             end
         end)
         if not success then
-            warn("Callback error (AutoSprint): " .. tostring(err))
+            warn("Callback error (Fly Speed): " .. tostring(err))
         end
     end
-}, "AutoSprintToggle")
+}, "FlySpeedInput")
 
 -- Input для WalkSpeed
 local WalkSpeedInput = MovementTab:CreateInput({
@@ -1032,6 +1089,27 @@ local FlyToggle = MovementTab:CreateToggle({
         end
     end
 }, "FlyToggle")
+
+-- Переключатель для Fling
+local FlingToggle = MovementTab:CreateToggle({
+    Name = "Fling",
+    Description = nil,
+    CurrentValue = false,
+    Callback = function(Value)
+        local success, err = pcall(function()
+            isFlingEnabled = Value
+            print("Fling toggle set to: " .. tostring(Value))
+            if isFlingEnabled then
+                enableFling()
+            else
+                disableFling()
+            end
+        end)
+        if not success then
+            warn("Callback error (Fling): " .. tostring(err))
+        end
+    end
+}, "FlingToggle")
 
 local Label2 = VisualTab:CreateLabel({
     Text = "FPS Functions",
