@@ -71,6 +71,8 @@ local walkSpeed = 16
 local jumpPower = 50
 local isFlingEnabled = false
 local flingConnection = nil
+local isNoClipEnabled = false
+local noClipConnection = nil
 
 -- Функция для очистки консоли
 local function clearConsole()
@@ -705,32 +707,29 @@ local function disableFly()
     end
 end
 
--- Функция для Fling
-local function flingPlayers()
+-- Функция для Fling (применяется к локальному игроку)
+local function flingLocalPlayer()
     local success, err = pcall(function()
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                local character = player.Character
-                local humanoid = character:FindFirstChildOfClass("Humanoid")
-                local rootPart = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart
+        local character = LocalPlayer.Character
+        if character then
+            local humanoid = character:FindFirstChildOfClass("Humanoid")
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if humanoid and rootPart and humanoid.Health > 0 then
+                local existingVelocity = rootPart:FindFirstChild("FlingVelocity")
+                if not existingVelocity then
+                    local bodyVelocity = Instance.new("BodyVelocity")
+                    bodyVelocity.Name = "FlingVelocity"
+                    bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+                    bodyVelocity.Velocity = Vector3.new(0, 5000, 0) -- Высокая скорость вверх
+                    bodyVelocity.Parent = rootPart
 
-                if humanoid and rootPart and humanoid.Health > 0 then
-                    local existingVelocity = rootPart:FindFirstChild("FlingVelocity")
-                    if not existingVelocity then
-                        local bodyVelocity = Instance.new("BodyVelocity")
-                        bodyVelocity.Name = "FlingVelocity"
-                        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                        bodyVelocity.Velocity = Vector3.new(0, 5000, 0) -- Высокая скорость вверх
-                        bodyVelocity.Parent = rootPart
-
-                        -- Удаляем BodyVelocity через 0.1 секунды, чтобы избежать постоянного воздействия
-                        task.spawn(function()
-                            task.wait(0.1)
-                            if bodyVelocity and bodyVelocity.Parent then
-                                bodyVelocity:Destroy()
-                            end
-                        end)
-                    end
+                    -- Удаляем BodyVelocity через 0.1 секунды
+                    task.spawn(function()
+                        task.wait(0.1)
+                        if bodyVelocity and bodyVelocity.Parent then
+                            bodyVelocity:Destroy()
+                        end
+                    end)
                 end
             end
         end
@@ -747,7 +746,7 @@ local function startFlingUpdate()
             staticFlingUpdateTime = (staticFlingUpdateTime or 0) + deltaTime
             if staticFlingUpdateTime >= 0.01 then
                 if isFlingEnabled then
-                    flingPlayers()
+                    flingLocalPlayer()
                 end
                 staticFlingUpdateTime = 0
             end
@@ -780,18 +779,60 @@ local function disableFling()
         print("Disabling Fling...")
         isFlingEnabled = false
         stopFlingUpdate()
-        -- Очистка любых оставшихся BodyVelocity
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
-                if rootPart and rootPart:FindFirstChild("FlingVelocity") then
-                    rootPart:FindFirstChild("FlingVelocity"):Destroy()
-                end
+        local character = LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            if rootPart:FindFirstChild("FlingVelocity") then
+                rootPart:FindFirstChild("FlingVelocity"):Destroy()
             end
         end
     end)
     if not success then
         warn("Ошибка при выключении Fling: " .. tostring(err))
+    end
+end
+
+-- Функция для NoClip
+local function enableNoClip()
+    local success, err = pcall(function()
+        print("Enabling NoClip...")
+        local character = LocalPlayer.Character
+        if not character or not character:FindFirstChildOfClass("Humanoid") then return end
+
+        noClipConnection = RunService.Stepped:Connect(function()
+            if not isNoClipEnabled or not LocalPlayer.Character then
+                return
+            end
+            for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = false
+                end
+            end
+        end)
+    end)
+    if not success then
+        warn("Ошибка при включении NoClip: " .. tostring(err))
+    end
+end
+
+local function disableNoClip()
+    local success, err = pcall(function()
+        print("Disabling NoClip...")
+        if noClipConnection then
+            noClipConnection:Disconnect()
+            noClipConnection = nil
+        end
+        local character = LocalPlayer.Character
+        if character then
+            for _, part in ipairs(character:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.CanCollide = true
+                end
+            end
+        end
+    end)
+    if not success then
+        warn("Ошибка при выключении NoClip: " .. tostring(err))
     end
 end
 
@@ -815,7 +856,6 @@ local function removeShiftToRunLine64(player)
             return
         end
 
-        -- Try to modify the Source property
         local sourceSuccess, source = pcall(function()
             return shiftToRun.Source
         end)
@@ -867,6 +907,29 @@ Players.PlayerAdded:Connect(function(player)
         player.CharacterAdded:Connect(function()
             removeShiftToRunLine64(player)
         end)
+    end
+end)
+
+-- Обновление NoClip, WalkSpeed и JumpPower при появлении нового персонажа
+LocalPlayer.CharacterAdded:Connect(function(character)
+    local success, err = pcall(function()
+        local humanoid = character:WaitForChild("Humanoid", 5)
+        if humanoid then
+            humanoid.WalkSpeed = walkSpeed
+            humanoid.JumpPower = jumpPower
+            if isFlyEnabled then
+                enableFly()
+            end
+            if isNoClipEnabled then
+                enableNoClip()
+            end
+            if isFlingEnabled then
+                enableFling()
+            end
+        end
+    end)
+    if not success then
+        warn("Ошибка при обновлении WalkSpeed/JumpPower/NoClip/Fling для нового персонажа: " .. tostring(err))
     end
 end)
 
@@ -1111,6 +1174,27 @@ local FlingToggle = MovementTab:CreateToggle({
     end
 }, "FlingToggle")
 
+-- Переключатель для NoClip
+local NoClipToggle = MovementTab:CreateToggle({
+    Name = "NoClip",
+    Description = nil,
+    CurrentValue = false,
+    Callback = function(Value)
+        local success, err = pcall(function()
+            isNoClipEnabled = Value
+            print("NoClip toggle set to: " .. tostring(Value))
+            if isNoClipEnabled then
+                enableNoClip()
+            else
+                disableNoClip()
+            end
+        end)
+        if not success then
+            warn("Callback error (NoClip): " .. tostring(err))
+        end
+    end
+}, "NoClipToggle")
+
 local Label2 = VisualTab:CreateLabel({
     Text = "FPS Functions",
     Style = 1
@@ -1203,20 +1287,3 @@ local VSEPInput1 = VisualTab:CreateInput({
         end
     end
 }, "FOVInput")
-
--- Обновление WalkSpeed и JumpPower при появлении нового персонажа
-LocalPlayer.CharacterAdded:Connect(function(character)
-    local success, err = pcall(function()
-        local humanoid = character:WaitForChild("Humanoid", 5)
-        if humanoid then
-            humanoid.WalkSpeed = walkSpeed
-            humanoid.JumpPower = jumpPower
-            if isFlyEnabled then
-                enableFly()
-            end
-        end
-    end)
-    if not success then
-        warn("Ошибка при обновлении WalkSpeed/JumpPower для нового персонажа: " .. tostring(err))
-    end
-end)
