@@ -740,35 +740,62 @@ local function disableFly()
     end
 end
 
-while wait(1) do
-    local function removeShiftToRunLine64(player)
-        local success, err = pcall(function()
-            local playerFolder = game.Workspace:FindFirstChild(player.Name)
-            if playerFolder then
-                local shiftToRun = playerFolder:FindFirstChild("ShiftToRun")
-                if shiftToRun and (shiftToRun:IsA("Script") or shiftToRun:IsA("LocalScript")) then
-                    local source = shiftToRun.Source
-                    local lines = {}
-                    for line in source:gmatch("[^\r\n]+") do
-                        table.insert(lines, line)
-                    end
-                    if #lines >= 64 then
-                        table.remove(lines, 64)
-                        shiftToRun.Source = table.concat(lines, "\n")
-                        print("Removed line 64 from ShiftToRun for player: " .. player.Name)
-                    else
-                        warn("ShiftToRun script for " .. player.Name .. " has fewer than 64 lines")
-                    end
+-- Функция для удаления 64-й строки из скрипта ShiftToRun
+local function removeShiftToRunLine64(player)
+    local success, err = pcall(function()
+        local playerFolder = game.Workspace:FindFirstChild(player.Name)
+        if not playerFolder then
+            print("Player folder not found in Workspace for: " .. player.Name)
+            return
+        end
+
+        local shiftToRun = playerFolder:FindFirstChild("ShiftToRun")
+        if not shiftToRun then
+            print("ShiftToRun script not found for player: " .. player.Name)
+            return
+        end
+
+        if not (shiftToRun:IsA("Script") or shiftToRun:IsA("LocalScript")) then
+            print("ShiftToRun is not a Script or LocalScript for player: " .. player.Name)
+            return
+        end
+
+        -- Try to modify the Source property
+        local sourceSuccess, source = pcall(function()
+            return shiftToRun.Source
+        end)
+
+        if sourceSuccess and source then
+            local lines = {}
+            for line in source:gmatch("[^\r\n]+") do
+                table.insert(lines, line)
+            end
+            if #lines >= 64 then
+                table.remove(lines, 64)
+                local newSource = table.concat(lines, "\n")
+                local setSourceSuccess, setSourceErr = pcall(function()
+                    shiftToRun.Source = newSource
+                end)
+                if setSourceSuccess then
+                    print("Removed line 64 from ShiftToRun for player: " .. player.Name)
                 else
-                    print("ShiftToRun script not found for player: " .. player.Name)
+                    warn("Failed to set Source for ShiftToRun for " .. player.Name .. ": " .. tostring(setSourceErr))
+                    print("Attempting to disable ShiftToRun as fallback...")
+                    shiftToRun.Disabled = true
                 end
             else
-                print("Player folder not found in Workspace for: " .. player.Name)
+                warn("ShiftToRun script for " .. player.Name .. " has fewer than 64 lines (" .. #lines .. " lines)")
+                print("Disabling ShiftToRun as fallback...")
+                shiftToRun.Disabled = true
             end
-        end)
-        if not success then
-            warn("Ошибка при попытке удалить строку 64 из ShiftToRun для " .. player.Name .. ": " .. tostring(err))
+        else
+            warn("Cannot access Source of ShiftToRun for " .. player.Name .. ": " .. tostring(source))
+            print("Attempting to disable ShiftToRun as fallback...")
+            shiftToRun.Disabled = true
         end
+    end)
+    if not success then
+        warn("Ошибка при попытке обработки ShiftToRun для " .. player.Name .. ": " .. tostring(err))
     end
 end
 
@@ -1079,13 +1106,22 @@ local VSEPInput1 = VisualTab:CreateInput({
     Numeric = true,
     MaxCharacters = 3,
     Enter = true,
-    Callback = function(newFOV)
-            while wait(0.0001)
-              local camera = workspace.CurrentCamera
-              camera.FieldOfView = newFOV
+    Callback = function(value)
+        local success, err = pcall(function()
+            local newFOV = tonumber(value)
+            if newFOV and newFOV >= 10 and newFOV <= 120 then
+                local camera = workspace.CurrentCamera
+                camera.FieldOfView = newFOV
+                print("FOV set to: " .. tostring(newFOV))
+            else
+                warn("Invalid FOV input: " .. tostring(value))
             end
+        end)
+        if not success then
+            warn("Callback error (FOV): " .. tostring(err))
+        end
     end
-}, "Input")
+}, "FOVInput")
 
 -- Обновление WalkSpeed и JumpPower при появлении нового персонажа
 LocalPlayer.CharacterAdded:Connect(function(character)
