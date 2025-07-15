@@ -71,6 +71,7 @@ local walkSpeed = 16
 local jumpPower = 50
 local isFlingEnabled = false
 local flingConnection = nil
+local flingStrength = 5000 -- Новая переменная для силы Fling
 local isNoClipEnabled = false
 local noClipConnection = nil
 
@@ -707,7 +708,7 @@ local function disableFly()
     end
 end
 
--- Функция для Fling (применяется к локальному игроку)
+-- Функция для Fling (адаптирована под Infinite Yield)
 local function flingLocalPlayer()
     local success, err = pcall(function()
         local character = LocalPlayer.Character
@@ -715,22 +716,29 @@ local function flingLocalPlayer()
             local humanoid = character:FindFirstChildOfClass("Humanoid")
             local rootPart = character:FindFirstChild("HumanoidRootPart")
             if humanoid and rootPart and humanoid.Health > 0 then
-                local existingVelocity = rootPart:FindFirstChild("FlingVelocity")
-                if not existingVelocity then
-                    local bodyVelocity = Instance.new("BodyVelocity")
-                    bodyVelocity.Name = "FlingVelocity"
-                    bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
-                    bodyVelocity.Velocity = Vector3.new(0, 5000, 0) -- Высокая скорость вверх
-                    bodyVelocity.Parent = rootPart
-
-                    -- Удаляем BodyVelocity через 0.1 секунды
-                    task.spawn(function()
-                        task.wait(0.1)
-                        if bodyVelocity and bodyVelocity.Parent then
-                            bodyVelocity:Destroy()
-                        end
-                    end)
+                -- Очистка предыдущих Fling-инстансов
+                if rootPart:FindFirstChild("FlingVelocity") then
+                    rootPart:FindFirstChild("FlingVelocity"):Destroy()
                 end
+
+                -- Используем CFrame для мгновенного смещения вверх (аналогично Infinite Yield)
+                local currentCFrame = rootPart.CFrame
+                rootPart.CFrame = currentCFrame + Vector3.new(0, flingStrength / 10, 0)
+
+                -- Добавляем небольшую BodyVelocity для импульса
+                local bodyVelocity = Instance.new("BodyVelocity")
+                bodyVelocity.Name = "FlingVelocity"
+                bodyVelocity.MaxForce = Vector3.new(0, math.huge, 0)
+                bodyVelocity.Velocity = Vector3.new(0, flingStrength, 0)
+                bodyVelocity.Parent = rootPart
+
+                -- Удаляем BodyVelocity через 0.1 секунды
+                task.spawn(function()
+                    task.wait(0.1)
+                    if bodyVelocity and bodyVelocity.Parent then
+                        bodyVelocity:Destroy()
+                    end
+                end)
             end
         end
     end)
@@ -739,12 +747,12 @@ local function flingLocalPlayer()
     end
 end
 
--- Запуск Fling каждые 0.01 секунд
+-- Запуск Fling каждые 0.05 секунд (увеличено для снижения нагрузки)
 local function startFlingUpdate()
     if not flingConnection then
         flingConnection = RunService.Heartbeat:Connect(function(deltaTime)
             staticFlingUpdateTime = (staticFlingUpdateTime or 0) + deltaTime
-            if staticFlingUpdateTime >= 0.01 then
+            if staticFlingUpdateTime >= 0.05 then
                 if isFlingEnabled then
                     flingLocalPlayer()
                 end
@@ -910,7 +918,7 @@ Players.PlayerAdded:Connect(function(player)
     end
 end)
 
--- Обновление NoClip, WalkSpeed и JumpPower при появлении нового персонажа
+-- Обновление NoClip, WalkSpeed, JumpPower и Fling при появлении нового персонажа
 LocalPlayer.CharacterAdded:Connect(function(character)
     local success, err = pcall(function()
         local humanoid = character:WaitForChild("Humanoid", 5)
@@ -1047,6 +1055,11 @@ local ColorPickerNameHP = VisualTab:CreateColorPicker({
     end
 }, "NameHPColorPicker")
 
+local Label4 = MovementTab:CreateLabel({
+    Text = "Speed/Power Modifications",
+    Style = 1 -- Luna Labels Have 3 Styles : A Basic Label, A Green Information Label and A Red Warning Label. Look At The Following Image For More Details
+})
+
 -- Input для FlySpeed
 local FlySpeedInput = MovementTab:CreateInput({
     Name = "Fly Speed",
@@ -1075,6 +1088,35 @@ local FlySpeedInput = MovementTab:CreateInput({
         end
     end
 }, "FlySpeedInput")
+
+-- Input для Fling Strength
+local FlingStrengthInput = MovementTab:CreateInput({
+    Name = "Fling Strength",
+    Description = nil,
+    PlaceholderText = "Enter Fling Strength",
+    CurrentValue = tostring(flingStrength),
+    Numeric = true,
+    MaxCharacters = 5,
+    Enter = true,
+    Callback = function(value)
+        local success, err = pcall(function()
+            local newStrength = tonumber(value)
+            if newStrength and newStrength >= 1000 and newStrength <= 10000 then
+                flingStrength = newStrength
+                print("Fling Strength set to: " .. tostring(flingStrength))
+                if isFlingEnabled then
+                    disableFling()
+                    enableFling()
+                end
+            else
+                warn("Invalid Fling Strength input: " .. tostring(value))
+            end
+        end)
+        if not success then
+            warn("Callback error (Fling Strength): " .. tostring(err))
+        end
+    end
+}, "FlingStrengthInput")
 
 -- Input для WalkSpeed
 local WalkSpeedInput = MovementTab:CreateInput({
@@ -1131,6 +1173,11 @@ local JumpPowerInput = MovementTab:CreateInput({
         end
     end
 }, "JumpPowerInput")
+
+local Label5 = MovementTab:CreateLabel({
+    Text = "Speed/Power Functions",
+    Style = 1 -- Luna Labels Have 3 Styles : A Basic Label, A Green Information Label and A Red Warning Label. Look At The Following Image For More Details
+})
 
 -- Переключатель для Fly
 local FlyToggle = MovementTab:CreateToggle({
