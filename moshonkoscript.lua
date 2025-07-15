@@ -74,6 +74,10 @@ local flingConnection = nil
 local isNoClipEnabled = false
 local noClipConnection = nil
 local flingDiedConnection = nil
+local flingAutoNoClip = false -- Tracks if NoClip was auto-enabled by Fling
+local isFakeLagEnabled = false
+local fakeLagConnection = nil
+local fakeLagInterval = 0.5 -- Default interval in seconds
 
 -- Функция для очистки консоли
 local function clearConsole()
@@ -722,8 +726,10 @@ local function flingLocalPlayer()
             if child:IsA("BasePart") then
                 child.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
                 child.CanCollide = false
+                child.CanTouch = false
                 child.Massless = true
                 child.Velocity = Vector3.new(0, 0, 0)
+                child.AngularVelocity = Vector3.new(0, 0, 0)
             end
         end
 
@@ -737,6 +743,7 @@ local function flingLocalPlayer()
 
         -- Включаем NoClip, если еще не включен
         if not isNoClipEnabled then
+            flingAutoNoClip = true
             enableNoClip()
         end
 
@@ -747,7 +754,10 @@ local function flingLocalPlayer()
             if not isFlingEnabled or not rootPart or not rootPart.Parent or not humanoid or humanoid.Health <= 0 then
                 if bambam and bambam.Parent then bambam:Destroy() end
                 if flingConnection then flingConnection:Disconnect() flingConnection = nil end
-                if not isNoClipEnabled then disableNoClip() end
+                if flingAutoNoClip and not isNoClipEnabled then
+                    disableNoClip()
+                    flingAutoNoClip = false
+                end
                 return
             end
 
@@ -773,6 +783,10 @@ local function enableFling()
     local success, err = pcall(function()
         print("Enabling Fling...")
         isFlingEnabled = true
+        -- Отключаем FakeLag, если активно, чтобы избежать конфликтов
+        if isFakeLagEnabled then
+            disableFakeLag()
+        end
         flingLocalPlayer()
         -- Подключаем обработчик смерти
         local character = LocalPlayer.Character
@@ -809,20 +823,24 @@ local function disableFling()
             if rootPart:FindFirstChild("FlingAngularVelocity") then
                 rootPart:FindFirstChild("FlingAngularVelocity"):Destroy()
             end
-            -- Восстанавливаем физические свойства и коллизии
+            -- Восстанавливаем физические свойства и сбрасываем скорости
             for _, child in ipairs(character:GetDescendants()) do
                 if child:IsA("BasePart") then
                     child.CustomPhysicalProperties = nil
                     child.Massless = false
+                    child.Velocity = Vector3.new(0, 0, 0)
+                    child.AngularVelocity = Vector3.new(0, 0, 0)
                     if not isNoClipEnabled then
                         child.CanCollide = true
+                        child.CanTouch = true
                     end
                 end
             end
         end
-        -- Отключаем NoClip, если он не включен отдельно
-        if not isNoClipEnabled then
+        -- Отключаем NoClip, если он был включен автоматически и не активен через переключатель
+        if flingAutoNoClip and not isNoClipEnabled then
             disableNoClip()
+            flingAutoNoClip = false
         end
     end)
     if not success then
@@ -830,10 +848,11 @@ local function disableFling()
     end
 end
 
--- Функция для NoClip
+-- Функция для NoClip (улучшенная)
 local function enableNoClip()
     local success, err = pcall(function()
         print("Enabling NoClip...")
+        isNoClipEnabled = true
         local character = LocalPlayer.Character
         if not character or not character:FindFirstChildOfClass("Humanoid") then return end
 
@@ -844,6 +863,7 @@ local function enableNoClip()
             for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = false
+                    part.CanTouch = false -- Отключаем касание для прохождения сквозь игроков
                 end
             end
         end)
@@ -864,13 +884,77 @@ local function disableNoClip()
         if character then
             for _, part in ipairs(character:GetDescendants()) do
                 if part:IsA("BasePart") then
-                    part.CanCollide = true
+                    if not isFlingEnabled then -- Не восстанавливаем, если Fling активен
+                        part.CanCollide = true
+                        part.CanTouch = true
+                    end
                 end
             end
         end
     end)
     if not success then
         warn("Ошибка при выключении NoClip: " .. tostring(err))
+    end
+end
+
+-- Функция для FakeLag
+local function enableFakeLag()
+    local success, err = pcall(function()
+        print("Enabling FakeLag...")
+        isFakeLagEnabled = true
+        local character = LocalPlayer.Character
+        if not character or not character:FindFirstChildOfClass("Humanoid") then return end
+        local rootPart = character:FindFirstChild("HumanoidRootPart")
+        if not rootPart then return end
+
+        local originalAnchored = rootPart.Anchored
+        local lagTimer = 0
+        local lagPhase = true
+        fakeLagConnection = RunService.Heartbeat:Connect(function(deltaTime)
+            if not isFakeLagEnabled or not rootPart or not rootPart.Parent or isFlingEnabled or isFlyEnabled then
+                if fakeLagConnection then
+                    fakeLagConnection:Disconnect()
+                    fakeLagConnection = nil
+                end
+                if rootPart then
+                    rootPart.Anchored = originalAnchored
+                end
+                return
+            end
+
+            lagTimer = lagTimer + deltaTime
+            if lagPhase and lagTimer >= fakeLagInterval then
+                rootPart.Anchored = true
+                lagPhase = false
+                lagTimer = 0
+            elseif not lagPhase and lagTimer >= 0.1 then
+                rootPart.Anchored = false
+                lagPhase = true
+                lagTimer = 0
+            end
+        end)
+    end)
+    if not success then
+        warn("Ошибка при включении FakeLag: " .. tostring(err))
+    end
+end
+
+local function disableFakeLag()
+    local success, err = pcall(function()
+        print("Disabling FakeLag...")
+        isFakeLagEnabled = false
+        if fakeLagConnection then
+            fakeLagConnection:Disconnect()
+            fakeLagConnection = nil
+        end
+        local character = LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            local rootPart = character:FindFirstChild("HumanoidRootPart")
+            rootPart.Anchored = false
+        end
+    end)
+    if not success then
+        warn("Ошибка при выключении FakeLag: " .. tostring(err))
     end
 end
 
@@ -948,7 +1032,7 @@ Players.PlayerAdded:Connect(function(player)
     end
 end)
 
--- Обновление NoClip, WalkSpeed, JumpPower и Fling при появлении нового персонажа
+-- Обновление NoClip, WalkSpeed, JumpPower, Fling и FakeLag при появлении нового персонажа
 LocalPlayer.CharacterAdded:Connect(function(character)
     local success, err = pcall(function()
         local humanoid = character:WaitForChild("Humanoid", 5)
@@ -958,16 +1042,19 @@ LocalPlayer.CharacterAdded:Connect(function(character)
             if isFlyEnabled then
                 enableFly()
             end
-            if isNoClipEnabled then
+            if isNoClipEnabled or isFlingEnabled then
                 enableNoClip()
             end
             if isFlingEnabled then
                 enableFling()
             end
+            if isFakeLagEnabled then
+                enableFakeLag()
+            end
         end
     end)
     if not success then
-        warn("Ошибка при обновлении WalkSpeed/JumpPower/NoClip/Fling для нового персонажа: " .. tostring(err))
+        warn("Ошибка при обновлении WalkSpeed/JumpPower/NoClip/Fling/FakeLag для нового персонажа: " .. tostring(err))
     end
 end)
 
@@ -1175,6 +1262,35 @@ local JumpPowerInput = MovementTab:CreateInput({
     end
 }, "JumpPowerInput")
 
+-- Input для FakeLag Interval
+local FakeLagIntervalInput = MovementTab:CreateInput({
+    Name = "FakeLag Interval",
+    Description = nil,
+    PlaceholderText = "Enter Lag Interval (0.1-2)",
+    CurrentValue = tostring(fakeLagInterval),
+    Numeric = true,
+    MaxCharacters = 3,
+    Enter = true,
+    Callback = function(value)
+        local success, err = pcall(function()
+            local newInterval = tonumber(value)
+            if newInterval and newInterval >= 0.1 and newInterval <= 2 then
+                fakeLagInterval = newInterval
+                print("FakeLag Interval set to: " .. tostring(fakeLagInterval))
+                if isFakeLagEnabled then
+                    disableFakeLag()
+                    enableFakeLag()
+                end
+            else
+                warn("Invalid FakeLag Interval input: " .. tostring(value))
+            end
+        end)
+        if not success then
+            warn("Callback error (FakeLag Interval): " .. tostring(err))
+        end
+    end
+}, "FakeLagIntervalInput")
+
 local Label5 = MovementTab:CreateLabel({
     Text = "Speed/Power Functions",
     Style = 1
@@ -1190,6 +1306,10 @@ local FlyToggle = MovementTab:CreateToggle({
             isFlyEnabled = Value
             print("Fly toggle set to: " .. tostring(Value))
             if isFlyEnabled then
+                -- Отключаем FakeLag, если активно, чтобы избежать конфликтов
+                if isFakeLagEnabled then
+                    disableFakeLag()
+                end
                 enableFly()
             else
                 disableFly()
@@ -1242,6 +1362,27 @@ local NoClipToggle = MovementTab:CreateToggle({
         end
     end
 }, "NoClipToggle")
+
+-- Переключатель для FakeLag
+local FakeLagToggle = MovementTab:CreateToggle({
+    Name = "FakeLag",
+    Description = nil,
+    CurrentValue = false,
+    Callback = function(Value)
+        local success, err = pcall(function()
+            isFakeLagEnabled = Value
+            print("FakeLag toggle set to: " .. tostring(Value))
+            if isFakeLagEnabled then
+                enableFakeLag()
+            else
+                disableFakeLag()
+            end
+        end)
+        if not success then
+            warn("Callback error (FakeLag): " .. tostring(err))
+        end
+    end
+}, "FakeLagToggle")
 
 local Label2 = VisualTab:CreateLabel({
     Text = "FPS Functions",
