@@ -41,6 +41,13 @@ local MovementTab = Window:CreateTab({
     ShowTitle = true
 })
 
+local VehicleTab = Window:CreateTab({
+    Name = "Vehicle",
+    Icon = "view_in_ar",
+    ImageSource = "Material",
+    ShowTitle = true
+})
+
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
@@ -74,10 +81,21 @@ local flingConnection = nil
 local isNoClipEnabled = false
 local noClipConnection = nil
 local flingDiedConnection = nil
-local flingAutoNoClip = false -- Tracks if NoClip was auto-enabled by Fling
+local flingAutoNoClip = false
 local isFakeLagEnabled = false
 local fakeLagConnection = nil
-local fakeLagInterval = 0.5 -- Default interval in seconds
+local fakeLagInterval = 0.5
+
+-- Переменные для Vehicle
+local isVehicleFlyEnabled = false
+local vehicleFlyConnection = nil
+local vehicleFlySpeed = 50
+local isVehicleSpeedUnlockerEnabled = false
+local vehicleSpeedConnection = nil
+local vehicleSpeedMultiplier = 2
+local isVehicleFlingEnabled = false
+local vehicleFlingConnection = nil
+local vehicleFlingAutoNoClip = false
 
 -- Функция для очистки консоли
 local function clearConsole()
@@ -356,7 +374,6 @@ end
 -- Функция для обновления всех ESP функций
 local function updateESP()
     local success, err = pcall(function()
-        -- Очистка существующих 3D-коробок
         for character, box in pairs(box3DParts) do
             if not character or not character.Parent or not character:FindFirstChildOfClass("Humanoid") or not character:FindFirstChild("HumanoidRootPart") then
                 remove3DBox(character)
@@ -365,7 +382,6 @@ local function updateESP()
             end
         end
 
-        -- Обновление ESP для всех игроков
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
                 local character = player.Character
@@ -373,7 +389,6 @@ local function updateESP()
                 local rootPart = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart
 
                 if humanoid and rootPart and humanoid.Health > 0 then
-                    -- 3D Boxes
                     if is3DBoxesEnabled then
                         if not box3DParts[character] then
                             create3DBox(character)
@@ -387,7 +402,6 @@ local function updateESP()
                         remove3DBox(character)
                     end
 
-                    -- Highlights
                     if isHighlightsEnabled then
                         if not character:FindFirstChild("PlayerHighlight") then
                             createHighlight(character)
@@ -396,7 +410,6 @@ local function updateESP()
                         removeHighlight(character)
                     end
 
-                    -- Name and HP Display
                     if isNameHPDisplayEnabled then
                         local billboard = character:FindFirstChild("NameHPDisplay")
                         if not billboard then
@@ -426,7 +439,6 @@ local function updateESP()
     end
 end
 
--- Запуск обновления ESP каждые 0.01 секунд
 local espUpdateConnection
 local function startESPUpdate()
     if not espUpdateConnection then
@@ -447,7 +459,6 @@ local function stopESPUpdate()
     end
 end
 
--- Функция для включения 3D-коробок
 local function enable3DBoxes()
     local success, err = pcall(function()
         print("Enabling 3D Boxes...")
@@ -459,7 +470,6 @@ local function enable3DBoxes()
     end
 end
 
--- Функция для выключения 3D-коробок
 local function disable3DBoxes()
     local success, err = pcall(function()
         print("Disabling 3D Boxes...")
@@ -477,7 +487,6 @@ local function disable3DBoxes()
     end
 end
 
--- Функция для включения Highlight
 local function enableHighlights()
     local success, err = pcall(function()
         print("Enabling Highlights...")
@@ -489,7 +498,6 @@ local function enableHighlights()
     end
 end
 
--- Функция для выключения Highlight
 local function disableHighlights()
     local success, err = pcall(function()
         print("Disabling Highlights...")
@@ -508,7 +516,6 @@ local function disableHighlights()
     end
 end
 
--- Функция для включения Name and HP Display
 local function enableNameHPDisplay()
     local success, err = pcall(function()
         print("Enabling Name and HP Display...")
@@ -520,7 +527,6 @@ local function enableNameHPDisplay()
     end
 end
 
--- Функция для выключения Name and HP Display
 local function disableNameHPDisplay()
     local success, err = pcall(function()
         print("Disabling Name and HP Display...")
@@ -539,7 +545,6 @@ local function disableNameHPDisplay()
     end
 end
 
--- Функция для декалей
 local function saveAndRemoveDecals()
     local success, err = pcall(function()
         savedDecals = {}
@@ -579,7 +584,6 @@ local function restoreDecals()
     end
 end
 
--- Функция для текстур
 local function saveAndRemoveTextures()
     local success, err = pcall(function()
         savedTextures = {}
@@ -627,7 +631,6 @@ local function restoreTextures()
     end
 end
 
--- Функция для Fly
 local function enableFly()
     local success, err = pcall(function()
         print("Enabling Fly...")
@@ -712,7 +715,6 @@ local function disableFly()
     end
 end
 
--- Функция для Fling (адаптирована под Infinite Yield)
 local function flingLocalPlayer()
     local success, err = pcall(function()
         local character = LocalPlayer.Character
@@ -721,7 +723,6 @@ local function flingLocalPlayer()
         local rootPart = character:FindFirstChild("HumanoidRootPart")
         if not humanoid or not rootPart or humanoid.Health <= 0 then return end
 
-        -- Применяем физические свойства и отключаем коллизии
         for _, child in ipairs(character:GetDescendants()) do
             if child:IsA("BasePart") then
                 child.CustomPhysicalProperties = PhysicalProperties.new(100, 0.3, 0.5)
@@ -733,21 +734,18 @@ local function flingLocalPlayer()
             end
         end
 
-        -- Создаем BodyAngularVelocity
         local bambam = Instance.new("BodyAngularVelocity")
         bambam.Name = "FlingAngularVelocity"
         bambam.Parent = rootPart
-        bambam.AngularVelocity = Vector3.new(0, 99999, 0)
+        bambam.AngularVelocity = Vector3.new(0, 50000, 0) -- Уменьшено для стабильности
         bambam.MaxTorque = Vector3.new(0, math.huge, 0)
-        bambam.P = math.huge
+        bambam.P = 10000
 
-        -- Включаем NoClip, если еще не включен
         if not isNoClipEnabled then
             flingAutoNoClip = true
             enableNoClip()
         end
 
-        -- Запускаем пульсирующий эффект
         local flingTimer = 0
         local flingPhase = true
         flingConnection = RunService.Heartbeat:Connect(function(deltaTime)
@@ -767,7 +765,7 @@ local function flingLocalPlayer()
                 flingPhase = false
                 flingTimer = 0
             elseif not flingPhase and flingTimer >= 0.1 then
-                bambam.AngularVelocity = Vector3.new(0, 99999, 0)
+                bambam.AngularVelocity = Vector3.new(0, 50000, 0)
                 flingPhase = true
                 flingTimer = 0
             end
@@ -778,17 +776,19 @@ local function flingLocalPlayer()
     end
 end
 
--- Функция для включения Fling
 local function enableFling()
     local success, err = pcall(function()
         print("Enabling Fling...")
         isFlingEnabled = true
-        -- Отключаем FakeLag, если активно, чтобы избежать конфликтов
         if isFakeLagEnabled then
             disableFakeLag()
         end
+        if isVehicleFlyEnabled or isVehicleSpeedUnlockerEnabled or isVehicleFlingEnabled then
+            disableVehicleFly()
+            disableVehicleSpeedUnlocker()
+            disableVehicleFling()
+        end
         flingLocalPlayer()
-        -- Подключаем обработчик смерти
         local character = LocalPlayer.Character
         if character then
             local humanoid = character:FindFirstChildOfClass("Humanoid")
@@ -804,7 +804,6 @@ local function enableFling()
     end
 end
 
--- Функция для выключения Fling
 local function disableFling()
     local success, err = pcall(function()
         print("Disabling Fling...")
@@ -823,7 +822,7 @@ local function disableFling()
             if rootPart:FindFirstChild("FlingAngularVelocity") then
                 rootPart:FindFirstChild("FlingAngularVelocity"):Destroy()
             end
-            -- Восстанавливаем физические свойства и сбрасываем скорости
+            rootPart.Anchored = true
             for _, child in ipairs(character:GetDescendants()) do
                 if child:IsA("BasePart") then
                     child.CustomPhysicalProperties = nil
@@ -836,8 +835,9 @@ local function disableFling()
                     end
                 end
             end
+            wait(0.1) -- Короткая задержка для стабилизации
+            rootPart.Anchored = false
         end
-        -- Отключаем NoClip, если он был включен автоматически и не активен через переключатель
         if flingAutoNoClip and not isNoClipEnabled then
             disableNoClip()
             flingAutoNoClip = false
@@ -848,7 +848,6 @@ local function disableFling()
     end
 end
 
--- Функция для NoClip (улучшенная)
 local function enableNoClip()
     local success, err = pcall(function()
         print("Enabling NoClip...")
@@ -863,7 +862,7 @@ local function enableNoClip()
             for _, part in ipairs(LocalPlayer.Character:GetDescendants()) do
                 if part:IsA("BasePart") then
                     part.CanCollide = false
-                    part.CanTouch = false -- Отключаем касание для прохождения сквозь игроков
+                    part.CanTouch = false
                 end
             end
         end)
@@ -884,7 +883,7 @@ local function disableNoClip()
         if character then
             for _, part in ipairs(character:GetDescendants()) do
                 if part:IsA("BasePart") then
-                    if not isFlingEnabled then -- Не восстанавливаем, если Fling активен
+                    if not isFlingEnabled then
                         part.CanCollide = true
                         part.CanTouch = true
                     end
@@ -897,7 +896,6 @@ local function disableNoClip()
     end
 end
 
--- Функция для FakeLag
 local function enableFakeLag()
     local success, err = pcall(function()
         print("Enabling FakeLag...")
@@ -958,7 +956,308 @@ local function disableFakeLag()
     end
 end
 
--- Функция для удаления 64-й строки из скрипта ShiftToRun
+-- Функции для Vehicle
+local function getVehicle()
+    local character = LocalPlayer.Character
+    if not character then return nil end
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    if not humanoid or not humanoid.SeatPart or not humanoid.SeatPart.Parent then return nil end
+    local vehicle = humanoid.SeatPart.Parent
+    local primaryPart = vehicle.PrimaryPart or vehicle:FindFirstChildWhichIsA("BasePart")
+    if not primaryPart then return nil end
+    return vehicle, primaryPart
+end
+
+local function enableVehicleFly()
+    local success, err = pcall(function()
+        print("Enabling Vehicle Fly...")
+        isVehicleFlyEnabled = true
+        if isFlyEnabled or isFlingEnabled or isFakeLagEnabled then
+            disableFly()
+            disableFling()
+            disableFakeLag()
+        end
+        local vehicle, primaryPart = getVehicle()
+        if not vehicle or not primaryPart then
+            isVehicleFlyEnabled = false
+            return
+        end
+
+        local bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.Name = "VehicleFlyVelocity"
+        bodyVelocity.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        bodyVelocity.Parent = primaryPart
+
+        local bodyGyro = Instance.new("BodyGyro")
+        bodyGyro.Name = "VehicleFlyGyro"
+        bodyGyro.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+        bodyGyro.P = 10000
+        bodyGyro.D = 500
+        bodyGyro.Parent = primaryPart
+
+        vehicleFlyConnection = RunService.RenderStepped:Connect(function()
+            local currentVehicle, currentPrimaryPart = getVehicle()
+            if not isVehicleFlyEnabled or not currentVehicle or not currentPrimaryPart or currentVehicle ~= vehicle then
+                if bodyVelocity then bodyVelocity:Destroy() end
+                if bodyGyro then bodyGyro:Destroy() end
+                if vehicleFlyConnection then vehicleFlyConnection:Disconnect() end
+                vehicleFlyConnection = nil
+                isVehicleFlyEnabled = false
+                return
+            end
+
+            local moveDirection = Vector3.new(0, 0, 0)
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                moveDirection = moveDirection + Vector3.new(0, 0, -1)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                moveDirection = moveDirection + Vector3.new(0, 0, 1)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                moveDirection = moveDirection + Vector3.new(-1, 0, 0)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                moveDirection = moveDirection + Vector3.new(1, 0, 0)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+                moveDirection = moveDirection + Vector3.new(0, 1, 0)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+                moveDirection = moveDirection + Vector3.new(0, -1, 0)
+            end
+
+            local cameraCFrame = workspace.CurrentCamera.CFrame
+            moveDirection = cameraCFrame:VectorToWorldSpace(moveDirection)
+            bodyVelocity.Velocity = moveDirection * vehicleFlySpeed
+            bodyGyro.CFrame = cameraCFrame
+        end)
+    end)
+    if not success then
+        warn("Ошибка при включении Vehicle Fly: " .. tostring(err))
+    end
+end
+
+local function disableVehicleFly()
+    local success, err = pcall(function()
+        print("Disabling Vehicle Fly...")
+        isVehicleFlyEnabled = false
+        if vehicleFlyConnection then
+            vehicleFlyConnection:Disconnect()
+            vehicleFlyConnection = nil
+        end
+        local vehicle, primaryPart = getVehicle()
+        if vehicle and primaryPart then
+            if primaryPart:FindFirstChild("VehicleFlyVelocity") then
+                primaryPart:FindFirstChild("VehicleFlyVelocity"):Destroy()
+            end
+            if primaryPart:FindFirstChild("VehicleFlyGyro") then
+                primaryPart:FindFirstChild("VehicleFlyGyro"):Destroy()
+            end
+            for _, part in ipairs(vehicle:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Velocity = Vector3.new(0, 0, 0)
+                    part.AngularVelocity = Vector3.new(0, 0, 0)
+                end
+            end
+        end
+    end)
+    if not success then
+        warn("Ошибка при выключении Vehicle Fly: " .. tostring(err))
+    end
+end
+
+local function enableVehicleSpeedUnlocker()
+    local success, err = pcall(function()
+        print("Enabling Vehicle Speed Unlocker...")
+        isVehicleSpeedUnlockerEnabled = true
+        if isFlyEnabled or isFlingEnabled or isFakeLagEnabled then
+            disableFly()
+            disableFling()
+            disableFakeLag()
+        end
+        local vehicle, primaryPart = getVehicle()
+        if not vehicle or not primaryPart then
+            isVehicleSpeedUnlockerEnabled = false
+            return
+        end
+
+        local bodyVelocity = Instance.new("BodyVelocity")
+        bodyVelocity.Name = "VehicleSpeedVelocity"
+        bodyVelocity.MaxForce = Vector3.new(math.huge, 0, math.huge)
+        bodyVelocity.Velocity = Vector3.new(0, 0, 0)
+        bodyVelocity.Parent = primaryPart
+
+        vehicleSpeedConnection = RunService.RenderStepped:Connect(function()
+            local currentVehicle, currentPrimaryPart = getVehicle()
+            if not isVehicleSpeedUnlockerEnabled or not currentVehicle or not currentPrimaryPart or currentVehicle ~= vehicle then
+                if bodyVelocity then bodyVelocity:Destroy() end
+                if vehicleSpeedConnection then vehicleSpeedConnection:Disconnect() end
+                vehicleSpeedConnection = nil
+                isVehicleSpeedUnlockerEnabled = false
+                return
+            end
+
+            local moveDirection = Vector3.new(0, 0, 0)
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+                moveDirection = moveDirection + Vector3.new(0, 0, -1)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+                moveDirection = moveDirection + Vector3.new(0, 0, 1)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+                moveDirection = moveDirection + Vector3.new(-1, 0, 0)
+            end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+                moveDirection = moveDirection + Vector3.new(1, 0, 0)
+            end
+
+            local cameraCFrame = workspace.CurrentCamera.CFrame
+            moveDirection = cameraCFrame:VectorToWorldSpace(moveDirection)
+            bodyVelocity.Velocity = moveDirection * vehicleFlySpeed * vehicleSpeedMultiplier
+        end)
+    end)
+    if not success then
+        warn("Ошибка при включении Vehicle Speed Unlocker: " .. tostring(err))
+    end
+end
+
+local function disableVehicleSpeedUnlocker()
+    local success, err = pcall(function()
+        print("Disabling Vehicle Speed Unlocker...")
+        isVehicleSpeedUnlockerEnabled = false
+        if vehicleSpeedConnection then
+            vehicleSpeedConnection:Disconnect()
+            vehicleSpeedConnection = nil
+        end
+        local vehicle, primaryPart = getVehicle()
+        if vehicle and primaryPart then
+            if primaryPart:FindFirstChild("VehicleSpeedVelocity") then
+                primaryPart:FindFirstChild("VehicleSpeedVelocity"):Destroy()
+            end
+            for _, part in ipairs(vehicle:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Velocity = Vector3.new(0, 0, 0)
+                    part.AngularVelocity = Vector3.new(0, 0, 0)
+                end
+            end
+        end
+    end)
+    if not success then
+        warn("Ошибка при выключении Vehicle Speed Unlocker: " .. tostring(err))
+    end
+end
+
+local function enableVehicleFling()
+    local success, err = pcall(function()
+        print("Enabling Vehicle Fling...")
+        isVehicleFlingEnabled = true
+        if isFlyEnabled or isFlingEnabled or isFakeLagEnabled or isVehicleFlyEnabled or isVehicleSpeedUnlockerEnabled then
+            disableFly()
+            disableFling()
+            disableFakeLag()
+            disableVehicleFly()
+            disableVehicleSpeedUnlocker()
+        end
+        local vehicle, primaryPart = getVehicle()
+        if not vehicle or not primaryPart then
+            isVehicleFlingEnabled = false
+            return
+        end
+
+        for _, part in ipairs(vehicle:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+                part.CanTouch = false
+                part.Massless = true
+                part.Velocity = Vector3.new(0, 0, 0)
+                part.AngularVelocity = Vector3.new(0, 0, 0)
+            end
+        end
+
+        local bambam = Instance.new("BodyAngularVelocity")
+        bambam.Name = "VehicleFlingAngularVelocity"
+        bambam.Parent = primaryPart
+        bambam.AngularVelocity = Vector3.new(0, 50000, 0)
+        bambam.MaxTorque = Vector3.new(0, math.huge, 0)
+        bambam.P = 10000
+
+        if not isNoClipEnabled then
+            vehicleFlingAutoNoClip = true
+            enableNoClip()
+        end
+
+        local flingTimer = 0
+        local flingPhase = true
+        vehicleFlingConnection = RunService.Heartbeat:Connect(function(deltaTime)
+            local currentVehicle, currentPrimaryPart = getVehicle()
+            if not isVehicleFlingEnabled or not currentVehicle or not currentPrimaryPart or currentVehicle ~= vehicle then
+                if bambam and bambam.Parent then bambam:Destroy() end
+                if vehicleFlingConnection then vehicleFlingConnection:Disconnect() end
+                vehicleFlingConnection = nil
+                if vehicleFlingAutoNoClip and not isNoClipEnabled then
+                    disableNoClip()
+                    vehicleFlingAutoNoClip = false
+                end
+                isVehicleFlingEnabled = false
+                return
+            end
+
+            flingTimer = flingTimer + deltaTime
+            if flingPhase and flingTimer >= 0.2 then
+                bambam.AngularVelocity = Vector3.new(0, 0, 0)
+                flingPhase = false
+                flingTimer = 0
+            elseif not flingPhase and flingTimer >= 0.1 then
+                bambam.AngularVelocity = Vector3.new(0, 50000, 0)
+                flingPhase = true
+                flingTimer = 0
+            end
+        end)
+    end)
+    if not success then
+        warn("Ошибка при включении Vehicle Fling: " .. tostring(err))
+    end
+end
+
+local function disableVehicleFling()
+    local success, err = pcall(function()
+        print("Disabling Vehicle Fling...")
+        isVehicleFlingEnabled = false
+        if vehicleFlingConnection then
+            vehicleFlingConnection:Disconnect()
+            vehicleFlingConnection = nil
+        end
+        local vehicle, primaryPart = getVehicle()
+        if vehicle and primaryPart then
+            if primaryPart:FindFirstChild("VehicleFlingAngularVelocity") then
+                primaryPart:FindFirstChild("VehicleFlingAngularVelocity"):Destroy()
+            end
+            primaryPart.Anchored = true
+            for _, part in ipairs(vehicle:GetDescendants()) do
+                if part:IsA("BasePart") then
+                    part.Massless = false
+                    part.Velocity = Vector3.new(0, 0, 0)
+                    part.AngularVelocity = Vector3.new(0, 0, 0)
+                    if not isNoClipEnabled then
+                        part.CanCollide = true
+                        part.CanTouch = true
+                    end
+                end
+            end
+            wait(0.1)
+            primaryPart.Anchored = false
+        end
+        if vehicleFlingAutoNoClip and not isNoClipEnabled then
+            disableNoClip()
+            vehicleFlingAutoNoClip = false
+        end
+    end)
+    if not success then
+        warn("Ошибка при выключении Vehicle Fling: " .. tostring(err))
+    end
+end
+
 local function removeShiftToRunLine64(player)
     local success, err = pcall(function()
         local playerFolder = game.Workspace:FindFirstChild(player.Name)
@@ -1016,14 +1315,12 @@ local function removeShiftToRunLine64(player)
     end
 end
 
--- Применение функции removeShiftToRunLine64 для существующих игроков
 for _, player in ipairs(Players:GetPlayers()) do
     if player ~= LocalPlayer then
         removeShiftToRunLine64(player)
     end
 end
 
--- Применение функции removeShiftToRunLine64 для новых игроков
 Players.PlayerAdded:Connect(function(player)
     if player ~= LocalPlayer then
         player.CharacterAdded:Connect(function()
@@ -1032,7 +1329,6 @@ Players.PlayerAdded:Connect(function(player)
     end
 end)
 
--- Обновление NoClip, WalkSpeed, JumpPower, Fling и FakeLag при появлении нового персонажа
 LocalPlayer.CharacterAdded:Connect(function(character)
     local success, err = pcall(function()
         local humanoid = character:WaitForChild("Humanoid", 5)
@@ -1051,10 +1347,34 @@ LocalPlayer.CharacterAdded:Connect(function(character)
             if isFakeLagEnabled then
                 enableFakeLag()
             end
+            if isVehicleFlyEnabled then
+                enableVehicleFly()
+            end
+            if isVehicleSpeedUnlockerEnabled then
+                enableVehicleSpeedUnlocker()
+            end
+            if isVehicleFlingEnabled then
+                enableVehicleFling()
+            end
         end
     end)
     if not success then
-        warn("Ошибка при обновлении WalkSpeed/JumpPower/NoClip/Fling/FakeLag для нового персонажа: " .. tostring(err))
+        warn("Ошибка при обновлении WalkSpeed/JumpPower/NoClip/Fling/FakeLag/Vehicle для нового персонажа: " .. tostring(err))
+    end
+end)
+
+-- Обработчик выхода из транспорта
+LocalPlayer.Character:WaitForChild("Humanoid").Seated:Connect(function(isSeated, seatPart)
+    if not isSeated then
+        if isVehicleFlyEnabled then
+            disableVehicleFly()
+        end
+        if isVehicleSpeedUnlockerEnabled then
+            disableVehicleSpeedUnlocker()
+        end
+        if isVehicleFlingEnabled then
+            disableVehicleFling()
+        end
     end
 end)
 
@@ -1064,7 +1384,6 @@ local Label1 = VisualTab:CreateLabel({
     Style = 1
 })
 
--- Переключатель для 3D Boxes
 local VESPToggle1 = VisualTab:CreateToggle({
     Name = "3D Boxes",
     Description = nil,
@@ -1084,7 +1403,6 @@ local VESPToggle1 = VisualTab:CreateToggle({
     end
 }, "3DBoxToggle")
 
--- ColorPicker для 3D Boxes
 local ColorPicker3D = VisualTab:CreateColorPicker({
     Name = "3D Box Color",
     Default = box3DColor,
@@ -1100,7 +1418,6 @@ local ColorPicker3D = VisualTab:CreateColorPicker({
     end
 }, "3DBoxColorPicker")
 
--- Переключатель для Highlights
 local HighlightToggle = VisualTab:CreateToggle({
     Name = "Player Highlights",
     Description = nil,
@@ -1120,7 +1437,6 @@ local HighlightToggle = VisualTab:CreateToggle({
     end
 }, "HighlightToggle")
 
--- ColorPicker для Highlights
 local ColorPickerHighlight = VisualTab:CreateColorPicker({
     Name = "Highlight Color",
     Default = highlightColor,
@@ -1136,7 +1452,6 @@ local ColorPickerHighlight = VisualTab:CreateColorPicker({
     end
 }, "HighlightColorPicker")
 
--- Переключатель для Name and HP Display
 local NameHPToggle = VisualTab:CreateToggle({
     Name = "Name and HP Display",
     Description = nil,
@@ -1156,7 +1471,6 @@ local NameHPToggle = VisualTab:CreateToggle({
     end
 }, "NameHPToggle")
 
--- ColorPicker для Name and HP Display
 local ColorPickerNameHP = VisualTab:CreateColorPicker({
     Name = "Name and HP Color",
     Default = nameHPColor,
@@ -1177,7 +1491,6 @@ local Label4 = MovementTab:CreateLabel({
     Style = 1
 })
 
--- Input для FlySpeed
 local FlySpeedInput = MovementTab:CreateInput({
     Name = "Fly Speed",
     Description = nil,
@@ -1206,7 +1519,6 @@ local FlySpeedInput = MovementTab:CreateInput({
     end
 }, "FlySpeedInput")
 
--- Input для WalkSpeed
 local WalkSpeedInput = MovementTab:CreateInput({
     Name = "WalkSpeed",
     Description = nil,
@@ -1234,7 +1546,6 @@ local WalkSpeedInput = MovementTab:CreateInput({
     end
 }, "WalkSpeedInput")
 
--- Input для JumpPower
 local JumpPowerInput = MovementTab:CreateInput({
     Name = "JumpPower",
     Description = nil,
@@ -1262,7 +1573,6 @@ local JumpPowerInput = MovementTab:CreateInput({
     end
 }, "JumpPowerInput")
 
--- Input для FakeLag Interval
 local FakeLagIntervalInput = MovementTab:CreateInput({
     Name = "FakeLag Interval",
     Description = nil,
@@ -1296,7 +1606,6 @@ local Label5 = MovementTab:CreateLabel({
     Style = 1
 })
 
--- Переключатель для Fly
 local FlyToggle = MovementTab:CreateToggle({
     Name = "Fly",
     Description = nil,
@@ -1306,9 +1615,13 @@ local FlyToggle = MovementTab:CreateToggle({
             isFlyEnabled = Value
             print("Fly toggle set to: " .. tostring(Value))
             if isFlyEnabled then
-                -- Отключаем FakeLag, если активно, чтобы избежать конфликтов
                 if isFakeLagEnabled then
                     disableFakeLag()
+                end
+                if isVehicleFlyEnabled or isVehicleSpeedUnlockerEnabled or isVehicleFlingEnabled then
+                    disableVehicleFly()
+                    disableVehicleSpeedUnlocker()
+                    disableVehicleFling()
                 end
                 enableFly()
             else
@@ -1321,7 +1634,6 @@ local FlyToggle = MovementTab:CreateToggle({
     end
 }, "FlyToggle")
 
--- Переключатель для Fling
 local FlingToggle = MovementTab:CreateToggle({
     Name = "Fling",
     Description = nil,
@@ -1342,7 +1654,6 @@ local FlingToggle = MovementTab:CreateToggle({
     end
 }, "FlingToggle")
 
--- Переключатель для NoClip
 local NoClipToggle = MovementTab:CreateToggle({
     Name = "NoClip",
     Description = nil,
@@ -1363,7 +1674,6 @@ local NoClipToggle = MovementTab:CreateToggle({
     end
 }, "NoClipToggle")
 
--- Переключатель для FakeLag
 local FakeLagToggle = MovementTab:CreateToggle({
     Name = "FakeLag",
     Description = nil,
@@ -1373,6 +1683,11 @@ local FakeLagToggle = MovementTab:CreateToggle({
             isFakeLagEnabled = Value
             print("FakeLag toggle set to: " .. tostring(Value))
             if isFakeLagEnabled then
+                if isVehicleFlyEnabled or isVehicleSpeedUnlockerEnabled or isVehicleFlingEnabled then
+                    disableVehicleFly()
+                    disableVehicleSpeedUnlocker()
+                    disableVehicleFling()
+                end
                 enableFakeLag()
             else
                 disableFakeLag()
@@ -1383,6 +1698,132 @@ local FakeLagToggle = MovementTab:CreateToggle({
         end
     end
 }, "FakeLagToggle")
+
+local Label6 = VehicleTab:CreateLabel({
+    Text = "Vehicle Modifications",
+    Style = 1
+})
+
+local VehicleFlySpeedInput = VehicleTab:CreateInput({
+    Name = "Vehicle Fly Speed",
+    Description = nil,
+    PlaceholderText = "Enter Vehicle Fly Speed",
+    CurrentValue = tostring(vehicleFlySpeed),
+    Numeric = true,
+    MaxCharacters = 3,
+    Enter = true,
+    Callback = function(value)
+        local success, err = pcall(function()
+            local newSpeed = tonumber(value)
+            if newSpeed and newSpeed >= 0 and newSpeed <= 500 then
+                vehicleFlySpeed = newSpeed
+                print("Vehicle Fly Speed set to: " .. tostring(vehicleFlySpeed))
+                if isVehicleFlyEnabled then
+                    disableVehicleFly()
+                    enableVehicleFly()
+                end
+            else
+                warn("Invalid Vehicle Fly Speed input: " .. tostring(value))
+            end
+        end)
+        if not success then
+            warn("Callback error (Vehicle Fly Speed): " .. tostring(err))
+        end
+    end
+}, "VehicleFlySpeedInput")
+
+local VehicleSpeedMultiplierInput = VehicleTab:CreateInput({
+    Name = "Vehicle Speed Multiplier",
+    Description = nil,
+    PlaceholderText = "Enter Speed Multiplier (1-10)",
+    CurrentValue = tostring(vehicleSpeedMultiplier),
+    Numeric = true,
+    MaxCharacters = 2,
+    Enter = true,
+    Callback = function(value)
+        local success, err = pcall(function()
+            local newMultiplier = tonumber(value)
+            if newMultiplier and newMultiplier >= 1 and newMultiplier <= 10 then
+                vehicleSpeedMultiplier = newMultiplier
+                print("Vehicle Speed Multiplier set to: " .. tostring(vehicleSpeedMultiplier))
+                if isVehicleSpeedUnlockerEnabled then
+                    disableVehicleSpeedUnlocker()
+                    enableVehicleSpeedUnlocker()
+                end
+            else
+                warn("Invalid Vehicle Speed Multiplier input: " .. tostring(value))
+            end
+        end)
+        if not success then
+            warn("Callback error (Vehicle Speed Multiplier): " .. tostring(err))
+        end
+    end
+}, "VehicleSpeedMultiplierInput")
+
+local Label7 = VehicleTab:CreateLabel({
+    Text = "Vehicle Functions",
+    Style = 1
+})
+
+local VehicleFlyToggle = VehicleTab:CreateToggle({
+    Name = "Vehicle Fly",
+    Description = nil,
+    CurrentValue = false,
+    Callback = function(Value)
+        local success, err = pcall(function()
+            isVehicleFlyEnabled = Value
+            print("Vehicle Fly toggle set to: " .. tostring(Value))
+            if isVehicleFlyEnabled then
+                enableVehicleFly()
+            else
+                disableVehicleFly()
+            end
+        end)
+        if not success then
+            warn("Callback error (Vehicle Fly): " .. tostring(err))
+        end
+    end
+}, "VehicleFlyToggle")
+
+local VehicleSpeedUnlockerToggle = VehicleTab:CreateToggle({
+    Name = "Vehicle Speed Unlocker",
+    Description = nil,
+    CurrentValue = false,
+    Callback = function(Value)
+        local success, err = pcall(function()
+            isVehicleSpeedUnlockerEnabled = Value
+            print("Vehicle Speed Unlocker toggle set to: " .. tostring(Value))
+            if isVehicleSpeedUnlockerEnabled then
+                enableVehicleSpeedUnlocker()
+            else
+                disableVehicleSpeedUnlocker()
+            end
+        end)
+        if not success then
+            warn("Callback error (Vehicle Speed Unlocker): " .. tostring(err))
+        end
+    end
+}, "VehicleSpeedUnlockerToggle")
+
+local VehicleFlingToggle = VehicleTab:CreateToggle({
+    Name = "Vehicle Fling",
+    Description = nil,
+    CurrentValue = false,
+    Callback = function(Value)
+        local success, err = pcall(function()
+            isVehicleFlingEnabled = Value
+            print("Vehicle Fling toggle set to: " .. tostring(Value))
+            if isVehicleFlingEnabled then
+                enableVehicleFling()
+            else
+                disableVehicleFling()
+            end
+        end)
+        if not success then
+            warn("Callback error (Vehicle Fling): " .. tostring(err))
+        end
+    end
+}, "VehicleFlingToggle")
 
 local Label2 = VisualTab:CreateLabel({
     Text = "FPS Functions",
