@@ -48,18 +48,15 @@ local LocalPlayer = Players.LocalPlayer
 
 -- Переменные для 3D Boxes
 local is3DBoxesEnabled = false
-local connections3D = {}
 local box3DColor = Color3.fromRGB(255, 0, 0)
 local box3DParts = {}
 
 -- Переменные для Highlights
 local isHighlightsEnabled = false
-local connectionsHighlight = {}
 local highlightColor = Color3.fromRGB(0, 255, 255)
 
 -- Переменные для Name and HP
 local isNameHPDisplayEnabled = false
-local connectionsNameHP = {}
 local nameHPColor = Color3.fromRGB(255, 255, 255)
 
 -- Переменные для Console Clear
@@ -74,19 +71,6 @@ local flyConnection = nil
 local flySpeed = 50
 local walkSpeed = 16
 local jumpPower = 50
-
--- Функция для безопасного добавления подключений
-local function addConnection3D(connection)
-    table.insert(connections3D, connection)
-end
-
-local function addConnectionHighlight(connection)
-    table.insert(connectionsHighlight, connection)
-end
-
-local function addConnectionNameHP(connection)
-    table.insert(connectionsNameHP, connection)
-end
 
 -- Функция для очистки консоли
 local function clearConsole()
@@ -161,17 +145,7 @@ local function create3DBox(character)
             box.Material = Enum.Material.Neon
             box.Parent = character
 
-            local connection = RunService.RenderStepped:Connect(function()
-                if rootPart and rootPart.Parent and box.Parent then
-                    box.CFrame = rootPart.CFrame
-                else
-                    if box then box:Destroy() end
-                    if connection then connection:Disconnect() end
-                    box3DParts[character] = nil
-                end
-            end)
-
-            box3DParts[character] = {Box = box, Connection = connection}
+            box3DParts[character] = box
             print("3D Box created for " .. (character.Parent and character.Parent.Name or "Unknown"))
         end)
         if not success then
@@ -186,14 +160,9 @@ end
 local function remove3DBox(character)
     if character then
         local success, err = pcall(function()
-            local boxData = box3DParts[character]
-            if boxData then
-                if boxData.Box then
-                    boxData.Box:Destroy()
-                end
-                if boxData.Connection then
-                    boxData.Connection:Disconnect()
-                end
+            local box = box3DParts[character]
+            if box then
+                box:Destroy()
                 box3DParts[character] = nil
                 print("3D Box removed for " .. (character.Parent and character.Parent.Name or "Unknown"))
             end
@@ -207,62 +176,15 @@ end
 -- Функция для обновления цвета 3D-коробок
 local function update3DBoxColor()
     local success, err = pcall(function()
-        for character, boxData in pairs(box3DParts) do
-            if boxData.Box then
-                boxData.Box.Color = box3DColor
+        for character, box in pairs(box3DParts) do
+            if box then
+                box.Color = box3DColor
                 print("3D Box color updated for " .. (character.Parent and character.Parent.Name or "Unknown"))
             end
         end
     end)
     if not success then
         warn("Ошибка при обновлении цвета 3D-коробок: " .. tostring(err))
-    end
-end
-
--- Функция для включения 3D-коробок
-local function enable3DBoxes()
-    local success, err = pcall(function()
-        print("Enabling 3D Boxes...")
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                create3DBox(player.Character)
-            end
-        end
-        addConnection3D(Players.PlayerAdded:Connect(function(player)
-            if player ~= LocalPlayer then
-                addConnection3D(player.CharacterAdded:Connect(function(character)
-                    if is3DBoxesEnabled then
-                        create3DBox(character)
-                    end
-                end))
-                addConnection3D(player.CharacterRemoving:Connect(function(character)
-                    remove3DBox(character)
-                end))
-            end
-        end))
-    end)
-    if not success then
-        warn("Ошибка при включении 3D-коробок: " .. tostring(err))
-    end
-end
-
--- Функция для выключения 3D-коробок
-local function disable3DBoxes()
-    local success, err = pcall(function()
-        print("Disabling 3D Boxes...")
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                remove3DBox(player.Character)
-            end
-        end
-        for _, connection in ipairs(connections3D) do
-            connection:Disconnect()
-        end
-        connections3D = {}
-        box3DParts = {}
-    end)
-    if not success then
-        warn("Ошибка при выключении 3D-коробок: " .. tostring(err))
     end
 end
 
@@ -328,52 +250,6 @@ local function updateHighlightColor()
     end
 end
 
--- Функция для включения Highlight
-local function enableHighlights()
-    local success, err = pcall(function()
-        print("Enabling Highlights...")
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                createHighlight(player.Character)
-            end
-        end
-        addConnectionHighlight(Players.PlayerAdded:Connect(function(player)
-            if player ~= LocalPlayer then
-                addConnectionHighlight(player.CharacterAdded:Connect(function(character)
-                    if isHighlightsEnabled then
-                        createHighlight(character)
-                    end
-                end))
-                addConnectionHighlight(player.CharacterRemoving:Connect(function(character)
-                    removeHighlight(character)
-                end))
-            end
-        end))
-    end)
-    if not success then
-        warn("Ошибка при включении Highlight: " .. tostring(err))
-    end
-end
-
--- Функция для выключения Highlight
-local function disableHighlights()
-    local success, err = pcall(function()
-        print("Disabling Highlights...")
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                removeHighlight(player.Character)
-            end
-        end
-        for _, connection in ipairs(connectionsHighlight) do
-            connection:Disconnect()
-        end
-        connectionsHighlight = {}
-    end)
-    if not success then
-        warn("Ошибка при выключении Highlight: " .. tostring(err))
-    end
-end
-
 -- Функция для создания Name and HP Display
 local function createNameHPDisplay(character)
     if character and character ~= LocalPlayer.Character and character:FindFirstChildOfClass("Humanoid") then
@@ -419,16 +295,6 @@ local function createNameHPDisplay(character)
             hpLabel.Font = Enum.Font.Code
             hpLabel.Parent = frame
 
-            local connection = RunService.RenderStepped:Connect(function()
-                if rootPart and rootPart.Parent and humanoid.Parent and billboard.Parent then
-                    hpLabel.Text = "HP: " .. math.floor(humanoid.Health) .. "/" .. humanoid.MaxHealth
-                else
-                    if billboard then billboard:Destroy() end
-                    if connection then connection:Disconnect() end
-                end
-            end)
-
-            addConnectionNameHP(connection)
             print("Name and HP Display created for " .. (character.Parent and character.Parent.Name or "Unknown"))
         end)
         if not success then
@@ -480,27 +346,167 @@ local function updateNameHPColor()
     end
 end
 
+-- Функция для обновления всех ESP функций
+local function updateESP()
+    local success, err = pcall(function()
+        -- Очистка существующих 3D-коробок
+        for character, box in pairs(box3DParts) do
+            if not character or not character.Parent or not character:FindFirstChildOfClass("Humanoid") or not character:FindFirstChild("HumanoidRootPart") then
+                remove3DBox(character)
+            elseif box then
+                box.CFrame = (character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart).CFrame
+            end
+        end
+
+        -- Обновление ESP для всех игроков
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local character = player.Character
+                local humanoid = character:FindFirstChildOfClass("Humanoid")
+                local rootPart = character:FindFirstChild("HumanoidRootPart") or character.PrimaryPart
+
+                if humanoid and rootPart and humanoid.Health > 0 then
+                    -- 3D Boxes
+                    if is3DBoxesEnabled then
+                        if not box3DParts[character] then
+                            create3DBox(character)
+                        else
+                            local box = box3DParts[character]
+                            if box then
+                                box.CFrame = rootPart.CFrame
+                            end
+                        end
+                    else
+                        remove3DBox(character)
+                    end
+
+                    -- Highlights
+                    if isHighlightsEnabled then
+                        if not character:FindFirstChild("PlayerHighlight") then
+                            createHighlight(character)
+                        end
+                    else
+                        removeHighlight(character)
+                    end
+
+                    -- Name and HP Display
+                    if isNameHPDisplayEnabled then
+                        local billboard = character:FindFirstChild("NameHPDisplay")
+                        if not billboard then
+                            createNameHPDisplay(character)
+                        else
+                            local frame = billboard:FindFirstChildOfClass("Frame")
+                            if frame then
+                                local hpLabel = frame:FindFirstChildWhichIsA("TextLabel", true)
+                                if hpLabel and hpLabel.Text:match("^HP:") then
+                                    hpLabel.Text = "HP: " .. math.floor(humanoid.Health) .. "/" .. humanoid.MaxHealth
+                                end
+                            end
+                        end
+                    else
+                        removeNameHPDisplay(character)
+                    end
+                else
+                    remove3DBox(character)
+                    removeHighlight(character)
+                    removeNameHPDisplay(character)
+                end
+            end
+        end
+    end)
+    if not success then
+        warn("Ошибка при обновлении ESP: " .. tostring(err))
+    end
+end
+
+-- Запуск обновления ESP каждые 0.01 секунд
+local espUpdateConnection
+local function startESPUpdate()
+    if not espUpdateConnection then
+        espUpdateConnection = RunService.Heartbeat:Connect(function(deltaTime)
+            staticESPUpdateTime = (staticESPUpdateTime or 0) + deltaTime
+            if staticESPUpdateTime >= 0.01 then
+                updateESP()
+                staticESPUpdateTime = 0
+            end
+        end)
+    end
+end
+
+local function stopESPUpdate()
+    if espUpdateConnection then
+        espUpdateConnection:Disconnect()
+        espUpdateConnection = nil
+    end
+end
+
+-- Функция для включения 3D-коробок
+local function enable3DBoxes()
+    local success, err = pcall(function()
+        print("Enabling 3D Boxes...")
+        is3DBoxesEnabled = true
+        startESPUpdate()
+    end)
+    if not success then
+        warn("Ошибка при включении 3D-коробок: " .. tostring(err))
+    end
+end
+
+-- Функция для выключения 3D-коробок
+local function disable3DBoxes()
+    local success, err = pcall(function()
+        print("Disabling 3D Boxes...")
+        is3DBoxesEnabled = false
+        for character, _ in pairs(box3DParts) do
+            remove3DBox(character)
+        end
+        box3DParts = {}
+        if not (is3DBoxesEnabled or isHighlightsEnabled or isNameHPDisplayEnabled) then
+            stopESPUpdate()
+        end
+    end)
+    if not success then
+        warn("Ошибка при выключении 3D-коробок: " .. tostring(err))
+    end
+end
+
+-- Функция для включения Highlight
+local function enableHighlights()
+    local success, err = pcall(function()
+        print("Enabling Highlights...")
+        isHighlightsEnabled = true
+        startESPUpdate()
+    end)
+    if not success then
+        warn("Ошибка при включении Highlight: " .. tostring(err))
+    end
+end
+
+-- Функция для выключения Highlight
+local function disableHighlights()
+    local success, err = pcall(function()
+        print("Disabling Highlights...")
+        isHighlightsEnabled = false
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                removeHighlight(player.Character)
+            end
+        end
+        if not (is3DBoxesEnabled or isHighlightsEnabled or isNameHPDisplayEnabled) then
+            stopESPUpdate()
+        end
+    end)
+    if not success then
+        warn("Ошибка при выключении Highlight: " .. tostring(err))
+    end
+end
+
 -- Функция для включения Name and HP Display
 local function enableNameHPDisplay()
     local success, err = pcall(function()
         print("Enabling Name and HP Display...")
-        for _, player in ipairs(Players:GetPlayers()) do
-            if player ~= LocalPlayer and player.Character then
-                createNameHPDisplay(player.Character)
-            end
-        end
-        addConnectionNameHP(Players.PlayerAdded:Connect(function(player)
-            if player ~= LocalPlayer then
-                addConnectionNameHP(player.CharacterAdded:Connect(function(character)
-                    if isNameHPDisplayEnabled then
-                        createNameHPDisplay(character)
-                    end
-                end))
-                addConnectionNameHP(player.CharacterRemoving:Connect(function(character)
-                    removeNameHPDisplay(character)
-                end))
-            end
-        end))
+        isNameHPDisplayEnabled = true
+        startESPUpdate()
     end)
     if not success then
         warn("Ошибка при включении Name and HP Display: " .. tostring(err))
@@ -511,15 +517,15 @@ end
 local function disableNameHPDisplay()
     local success, err = pcall(function()
         print("Disabling Name and HP Display...")
+        isNameHPDisplayEnabled = false
         for _, player in ipairs(Players:GetPlayers()) do
             if player ~= LocalPlayer and player.Character then
                 removeNameHPDisplay(player.Character)
             end
         end
-        for _, connection in ipairs(connectionsNameHP) do
-            connection:Disconnect()
+        if not (is3DBoxesEnabled or isHighlightsEnabled or isNameHPDisplayEnabled) then
+            stopESPUpdate()
         end
-        connectionsNameHP = {}
     end)
     if not success then
         warn("Ошибка при выключении Name and HP Display: " .. tostring(err))
@@ -828,9 +834,8 @@ local VESPToggle1 = VisualTab:CreateToggle({
     CurrentValue = false,
     Callback = function(Value)
         local success, err = pcall(function()
-            is3DBoxesEnabled = Value
             print("3D Boxes toggle set to: " .. tostring(Value))
-            if is3DBoxesEnabled then
+            if Value then
                 enable3DBoxes()
             else
                 disable3DBoxes()
@@ -865,9 +870,8 @@ local HighlightToggle = VisualTab:CreateToggle({
     CurrentValue = false,
     Callback = function(Value)
         local success, err = pcall(function()
-            isHighlightsEnabled = Value
             print("Player Highlights toggle set to: " .. tostring(Value))
-            if isHighlightsEnabled then
+            if Value then
                 enableHighlights()
             else
                 disableHighlights()
@@ -902,9 +906,8 @@ local NameHPToggle = VisualTab:CreateToggle({
     CurrentValue = false,
     Callback = function(Value)
         local success, err = pcall(function()
-            isNameHPDisplayEnabled = Value
             print("Name and HP Display toggle set to: " .. tostring(Value))
-            if isNameHPDisplayEnabled then
+            if Value then
                 enableNameHPDisplay()
             else
                 disableNameHPDisplay()
